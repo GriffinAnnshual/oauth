@@ -19,39 +19,49 @@ To add campaigns, run add_campaigns.py.
 
 
 import argparse
+import pathlib
 import sys
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
 
+
 # [START get_campaigns]
-def main(client, customer_id):
+def main(client: GoogleAdsClient, customer_id: str):
     ga_service = client.get_service("GoogleAdsService")
 
-    query = """
-        SELECT
-          campaign.id,
-          campaign.name,
-          campaign.status,
-          campaign.start_date,
-          campaign.end_date,
-          campaign_budget.amount_micros
+    # put all of the fields that you want to fetch in this list
+    fields = [
+        "campaign.id",
+        "campaign.name",
+        "campaign.status",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign_budget.amount_micros",
+    ]
+
+    query = f"""
+        SELECT {', '.join(fields)}
         FROM campaign
         ORDER BY campaign.id"""
+
+    rows = []
 
     # Issues a search request using streaming.
     stream = ga_service.search_stream(customer_id=customer_id, query=query)
     for batch in stream:
         for row in batch.results:
-            print(
-                f"Campaign with ID {row.campaign.id} and name "
-                f'"{row.campaign.name}" was found. '
-                f'Status: "{row.campaign.status}", '
-                f'Start Date: "{row.campaign.start_date}", '
-                f'End Date: "{row.campaign.end_date}", '
-                f'Budget: "{row.campaign_budget.amount_micros}"'
-            )
+            # convert the rows into a list of dictionaries
+            data = {}
+            for field in fields:
+                field_start, field_end = field.split(".")
+                data[field_end] = getattr(getattr(row, field_start), field_end)
+
+            rows.append(data)
             # [END get_campaigns]
+
+    # the rows can be converted into a JSON string by calling json.dumps(rows)
+    print(rows)
 
 
 if __name__ == "__main__":
@@ -70,7 +80,11 @@ if __name__ == "__main__":
 
     # GoogleAdsClient will read the google-ads.yaml configuration file in the
     # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v16")
+    conf_file_exists = pathlib.Path("./google-ads.yaml").exists()
+
+    googleads_client = GoogleAdsClient.load_from_storage(
+        path=("google-ads.yaml" if conf_file_exists else None), version="v16"
+    )
 
     try:
         main(googleads_client, args.customer_id)
